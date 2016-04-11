@@ -46,6 +46,8 @@ installed.
 from PySide import QtCore, QtGui
 import FreeCAD,urllib2,re,os,shutil
 
+NOGIT = False # for debugging purposes, set this to True to always use http downloads
+
 
 def symlink(source, link_name):
     if os.path.exists(link_name):
@@ -201,9 +203,11 @@ class UpdateWorker(QtCore.QThread):
         moddir = basedir + os.sep + "Mod"
         repos = []
         for l in p:
-            name = re.findall("data-skip-pjax=\"true\">(.*?)<",l)[0]
+            #name = re.findall("data-skip-pjax=\"true\">(.*?)<",l)[0]
+            name = re.findall("title=\"(.*?) @",l)[0]
             self.info_label.emit(name)
-            url = re.findall("title=\"(.*?) @",l)[0]
+            #url = re.findall("title=\"(.*?) @",l)[0]
+            url = "https://github.com/" + re.findall("href=\"\/(.*?)\/tree",l)[0]
             addondir = moddir + os.sep + name
             if not os.path.exists(addondir):
                 state = 0
@@ -281,7 +285,8 @@ class InstallWorker(QtCore.QThread):
             return
         if not self.repos:
             return
-        # git = None # uncomment this to force standard download mode
+        if NOGIT:
+            git = None
         basedir = FreeCAD.ConfigGet("UserAppData")
         moddir = basedir + os.sep + "Mod"
         if not os.path.exists(moddir):
@@ -296,10 +301,11 @@ class InstallWorker(QtCore.QThread):
             else:
                 answer = self.download(self.repos[self.idx][1],clonedir)
         else:
-            self.info_label.emit("Cloning module...")
             if git:
+                self.info_label.emit("Cloning module...")
                 repo = git.Repo.clone_from(self.repos[self.idx][1], clonedir, branch='master')
             else:
+                self.info_label.emit("Downloading module...")
                 self.download(self.repos[self.idx][1],clonedir)
             answer = "Done. Please restart FreeCAD to apply the changes."
             # symlink any macro contained in the module to the macros folder
@@ -320,10 +326,16 @@ class InstallWorker(QtCore.QThread):
         bakdir = None
         if os.path.exists(clonedir):
             bakdir = clonedir+".bak"
+            if os.path.exists(bakdir):
+                shutil.rmtree(bakdir)
             os.rename(clonedir,bakdir)
         os.makedirs(clonedir)
-        zipurl = giturl[:-4]+"/archive/master.zip"
-        u = urllib2.urlopen(zipurl)
+        zipurl = giturl+"/archive/master.zip"
+        try:
+            print("Downloading "+zipurl)
+            u = urllib2.urlopen(zipurl)
+        except:
+            return "Error: Unable to download "+zipurl
         zfile = StringIO.StringIO()
         zfile.write(u.read())
         zfile = zipfile.ZipFile(zfile)
